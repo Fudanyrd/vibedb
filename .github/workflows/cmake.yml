@@ -63,18 +63,6 @@ jobs:
       - name: Build
         run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
-      - name: Check Format
-        working-directory: ${{github.workspace}}/build
-        run: make check-format
-
-      - name: Check Lint
-        working-directory: ${{github.workspace}}/build
-        run: make check-lint
-
-      - name: Check Clang Tidy
-        working-directory: ${{github.workspace}}/build
-        run: make check-clang-tidy
-
       - name: Check Tests
         working-directory: ${{github.workspace}}/build
         run: make build-tests && make check-public-ci-tests
@@ -86,3 +74,26 @@ jobs:
           make check-clang-tidy-p0 || not_tidy=1 # do not fail fast.
           make count_min_sketch_test && ./test/count_min_sketch_test
           exit $not_tidy
+
+      - name: Check Project 1
+        working-directory: ${{github.workspace}}/build
+        run: |
+          not_tidy=0
+          make check-clang-tidy-p1 || not_tidy=1 # do not fail fast.
+          for testcase in arc_replacer_test arc_replacer_performance_test \
+          disk_scheduler_test buffer_pool_manager_test; do
+             make $testcase && ./test/$testcase
+          done
+          exit $not_tidy
+
+      - name: Check Format
+        working-directory: ${{github.workspace}}/build
+        run: make check-format
+
+      - name: Check Lint
+        working-directory: ${{github.workspace}}/build
+        run: make check-lint
+
+      - name: Check Clang Tidy
+        working-directory: ${{github.workspace}}/build
+        run: make check-clang-tidy
