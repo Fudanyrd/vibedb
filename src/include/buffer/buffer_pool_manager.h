@@ -14,6 +14,7 @@
 
 #include <list>
 #include <memory>
+#include <optional>
 #include <shared_mutex>
 #include <unordered_map>
 #include <vector>
@@ -89,12 +90,9 @@ class FrameHeader {
   std::vector<char> data_;
 
   /**
-   * TODO(P1): You may add any fields or helper functions under here that you think are necessary.
-   *
-   * One potential optimization you could make is storing an optional page ID of the page that the `FrameHeader` is
-   * currently storing. This might allow you to skip searching for the corresponding (page ID, frame ID) pair somewhere
-   * else in the buffer pool manager...
+   * @brief The page ID of the page currently stored in this frame, or `INVALID_PAGE_ID` when the frame is empty.
    */
+  page_id_t page_id_{INVALID_PAGE_ID};
 };
 
 /**
@@ -163,13 +161,18 @@ class BufferPoolManager {
   LogManager *log_manager_ __attribute__((__unused__));
 
   /**
-   * TODO(P1): You may add additional private members and helper functions if you find them necessary.
+   * @brief Finds or creates a frame to hold `page_id`, pinning the resulting frame.
    *
-   * There will likely be a lot of code duplication between the different modes of accessing a page.
-   *
-   * We would recommend implementing a helper function that returns the ID of a frame that is free and has nothing
-   * stored inside of it. Additionally, you may also want to implement a helper function that returns either a shared
-   * pointer to a `FrameHeader` that already has a page's data stored inside of it, or an index to said `FrameHeader`.
+   * The caller must hold `bpm_latch_`. If the page is already in the buffer pool, the corresponding frame is pinned
+   * and returned. Otherwise a free frame is used, or an evictable frame is found via the replacer and its contents
+   * (written back to disk first if dirty) are replaced. Returns `std::nullopt` if there is no memory available.
    */
+  auto GetAvailableFrame(page_id_t page_id, AccessType access_type) -> std::optional<frame_id_t>;
+
+  /** @brief Synchronously writes the data of `frame_id` to `page_id` on disk. Assumes the caller holds `bpm_latch_`. */
+  void WriteFrameToDisk(frame_id_t frame_id, page_id_t page_id);
+
+  /** @brief Synchronously reads `page_id` from disk into `frame_id`. Assumes the caller holds `bpm_latch_`. */
+  void ReadFrameFromDisk(frame_id_t frame_id, page_id_t page_id);
 };
 }  // namespace bustub
