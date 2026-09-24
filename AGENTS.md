@@ -18,7 +18,7 @@ This is course work. NEVER make solution code public, push it to a public fork, 
 - Headers are NOT colocated with sources: `src/include/<module>/foo.h` vs `src/<module>/foo.cpp`. `src/include` is a public include dir, so includes are `"module/foo.h"`.
 - Tests live at `test/<module>/*test.cpp`, globbed by `test/CMakeLists.txt`; each file becomes an executable named after the file (no `.cpp`) in `build/test/`.
 - Per-project file lists for clang-tidy and `submit-pN` are hardcoded in the root `CMakeLists.txt` (`P0_FILES`, `P1_FILES`, …). Adding a new implementation file to a project does not add it to tidy or the submission zip unless you also list it there.
-- Project writeups are in `docs/` (`proj0.md`, `p1-design.md`).
+- Project handouts are in `docs/`.
 
 ## Tests
 - One test target (do not guess a ctest name):
@@ -33,12 +33,11 @@ This is course work. NEVER make solution code public, push it to a public fork, 
 ## Style / required checks
 BusTub uses `clang-format-15`, `clang-tidy-15`, and `cpplint`; a project scores zero if these fail.
 ```console
-make -C build format              # clang-format, auto-fixes in place
-make -C build check-format        # verify only
 make -C build check-lint          # cpplint
 make -C build check-clang-tidy    # whole repo (slow); use check-clang-tidy-p0 etc.
 ```
-`.clang-format` = Google, but with `ColumnLimit: 120` and `PointerAlignment: Right`.
+`.clang-format` = Google, but with `ColumnLimit: 120` and `PointerAlignment: Right`. Do not run `make format`
+because of incompatible `clang-format` version; let repository owner handles formatting.
 
 ## Conventions / gotchas
 - `BUSTUB_ASSERT` compiles out in Release; use `BUSTUB_ENSURE` for checks that must always run.
