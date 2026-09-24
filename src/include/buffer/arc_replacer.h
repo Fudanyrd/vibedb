@@ -34,6 +34,10 @@ struct FrameStatus {
   frame_id_t frame_id_;
   bool evictable_;
   ArcStatus arc_status_;
+  // Position of this entry in mru_ / mfu_ (valid when alive).
+  std::list<frame_id_t>::iterator alive_iter_;
+  // Position of this entry in mru_ghost_ / mfu_ghost_ (valid when a ghost).
+  std::list<page_id_t>::iterator ghost_iter_;
   FrameStatus(page_id_t pid, frame_id_t fid, bool ev, ArcStatus st)
       : page_id_(pid), frame_id_(fid), evictable_(ev), arc_status_(st) {}
 };
@@ -82,9 +86,15 @@ class ArcReplacer {
   [[maybe_unused]] size_t mru_target_size_{0};
   /* c as in original paper */
   [[maybe_unused]] size_t replacer_size_;
+  /* number of evictable entries in mru_ / mfu_ (sum equals curr_size_) */
+  [[maybe_unused]] size_t mru_evictable_{0};
+  [[maybe_unused]] size_t mfu_evictable_{0};
   std::mutex latch_;
 
   // TODO(student): You can add member variables / functions as you like.
+  /* helper: remove an alive frame from its list and alive_map_, without
+   * touching ghost lists. Returns the removed status, or nullptr if absent. */
+  auto DetachAlive(frame_id_t frame_id, bool require_evictable) -> std::shared_ptr<FrameStatus>;
 };
 
 }  // namespace bustub
