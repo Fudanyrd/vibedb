@@ -28,13 +28,13 @@ namespace bustub {
  * @throws std::invalid_argument if width or depth are zero.
  */
 template <typename KeyType>
-CountMinSketch<KeyType>::CountMinSketch(uint32_t width, uint32_t depth) : width_(width), depth_(depth) {
+CountMinSketch<KeyType>::CountMinSketch(uint32_t width, uint32_t depth)
+    : width_(width), depth_(depth), counters_(static_cast<size_t>(width) * static_cast<size_t>(depth)) {
   /** @TODO(student) Implement this function! */
   if (width_ == 0 || depth_ == 0) {
     throw std::invalid_argument("CountMinSketch width and depth must be non-zero.");
   }
 
-  counters_ = std::vector<std::atomic<uint32_t>>(static_cast<size_t>(width_) * static_cast<size_t>(depth_));
   for (auto &counter : counters_) {
     counter.store(0, std::memory_order_relaxed);
   }
