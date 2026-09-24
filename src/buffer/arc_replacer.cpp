@@ -183,7 +183,7 @@ void ArcReplacer::RecordAccess(frame_id_t frame_id, page_id_t page_id, [[maybe_u
     if (ghost_status->arc_status_ == ArcStatus::MRU_GHOST) {
       if (mru_ghost_.size() >= mfu_ghost_.size()) {
         mru_target_size_ = std::min(replacer_size_, mru_target_size_ + 1);
-      } else if (mru_ghost_.size() > 0) {
+      } else if (!mru_ghost_.empty()) {
         size_t delta = mfu_ghost_.size() / mru_ghost_.size();
         mru_target_size_ = std::min(replacer_size_, mru_target_size_ + delta);
       }
@@ -193,7 +193,7 @@ void ArcReplacer::RecordAccess(frame_id_t frame_id, page_id_t page_id, [[maybe_u
         if (mru_target_size_ > 0) {
           mru_target_size_--;
         }
-      } else if (mfu_ghost_.size() > 0) {
+      } else if (!mfu_ghost_.empty()) {
         size_t delta = mru_ghost_.size() / mfu_ghost_.size();
         mru_target_size_ = mru_target_size_ > delta ? mru_target_size_ - delta : 0;
       }
