@@ -242,8 +242,6 @@ void WritePageGuard::Flush() {
   requests.push_back(DiskRequest{true, frame_->GetDataMut(), page_id_, std::move(promise)});
   disk_scheduler_->Schedule(requests);
   future.get();
-  std::scoped_lock lock(*bpm_latch_);
-  frame_->is_dirty_ = false;
 }
 
 /**

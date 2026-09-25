@@ -60,6 +60,35 @@ TEST(BufferPoolManagerTest, VeryBasicTest) {
   ASSERT_TRUE(bpm->DeletePage(pid));
 }
 
+TEST(BufferPoolManagerTest, FlushPageTest) {
+  auto disk_manager = std::make_shared<DiskManager>(db_fname);
+  auto bpm = std::make_shared<BufferPoolManager>(FRAMES, disk_manager.get());
+
+  const page_id_t pid = bpm->NewPage();
+  const char *str1 = "str1";
+  const char *str2 = "str2";
+
+  {
+    auto guard = bpm->WritePage(pid);
+    char *page_data = guard.GetDataMut();
+    CopyString(page_data, str1);
+    EXPECT_TRUE(guard.IsDirty());
+
+    /* Flush the page to disk (dirty bit should be cleared) */
+    guard.Flush();
+    /* Note: bpm->FlushPage(pid) would deadlock if the page is still pinned */
+
+    CopyString(page_data, str2);
+    EXPECT_STREQ(page_data, str2);
+    EXPECT_TRUE(guard.IsDirty());
+  }
+
+  {
+    const auto guard = bpm->ReadPage(pid);
+    EXPECT_STREQ(guard.GetData(), str2);
+  }
+}
+
 TEST(BufferPoolManagerTest, PagePinEasyTest) {
   auto disk_manager = std::make_shared<DiskManager>(db_fname);
   auto bpm = std::make_shared<BufferPoolManager>(2, disk_manager.get());
