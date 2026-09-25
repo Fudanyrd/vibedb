@@ -330,7 +330,7 @@ auto BufferPoolManager::FlushPageUnsafe(page_id_t page_id) -> bool {
     // We do not hold the page latch here, so another thread could set the dirty bit again after we clear it. This is
     // why this variant is "unsafe".
     WriteFrameToDisk(frame->frame_id_, page_id);
-    frame->is_dirty_ = false;
+    // frame->is_dirty_ = false;
   }
   return true;
 }
@@ -354,7 +354,7 @@ void BufferPoolManager::FlushAllPagesUnsafe() {
     auto &frame = frames_[frame_id];
     if (frame->is_dirty_) {
       WriteFrameToDisk(frame_id, page_id);
-      frame->is_dirty_ = false;
+      // frame->is_dirty_ = false;
     }
   }
 }
