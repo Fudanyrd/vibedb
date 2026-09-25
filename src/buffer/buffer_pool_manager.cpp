@@ -97,30 +97,6 @@ BufferPoolManager::BufferPoolManager(size_t num_frames, DiskManager *disk_manage
 }
 
 /**
- * @brief Destroys the `BufferPoolManager`, freeing up all memory that the buffer pool was using.
- */
-BufferPoolManager::~BufferPoolManager() = default;
-
-/**
- * @brief Returns the number of frames that this buffer pool manages.
- */
-auto BufferPoolManager::Size() const -> size_t { return num_frames_; }
-
-/**
- * @brief Allocates a new page on disk.
- *
- * ### Implementation
- *
- * You will maintain a thread-safe, monotonically increasing counter in the form of a `std::atomic<page_id_t>`.
- * See the documentation on [atomics](https://en.cppreference.com/w/cpp/atomic/atomic) for more information.
- *
- * TODO(P1): Add implementation.
- *
- * @return The page ID of the newly allocated page.
- */
-auto BufferPoolManager::NewPage() -> page_id_t { return next_page_id_.fetch_add(1); }
-
-/**
  * @brief Removes a page from the database, both on disk and in memory.
  *
  * If the page is pinned in the buffer pool, this function does nothing and returns `false`. Otherwise, this function
@@ -325,56 +301,6 @@ auto BufferPoolManager::CheckedReadPage(page_id_t page_id, AccessType access_typ
 }
 
 /**
- * @brief A wrapper around `CheckedWritePage` that unwraps the inner value if it exists.
- *
- * If `CheckedWritePage` returns a `std::nullopt`, **this function aborts the entire process.**
- *
- * This function should **only** be used for testing and ergonomic's sake. If it is at all possible that the buffer pool
- * manager might run out of memory, then use `CheckedPageWrite` to allow you to handle that case.
- *
- * See the documentation for `CheckedPageWrite` for more information about implementation.
- *
- * @param page_id The ID of the page we want to read.
- * @param access_type The type of page access.
- * @return WritePageGuard A page guard ensuring exclusive and mutable access to a page's data.
- */
-auto BufferPoolManager::WritePage(page_id_t page_id, AccessType access_type) -> WritePageGuard {
-  auto guard_opt = CheckedWritePage(page_id, access_type);
-
-  if (!guard_opt.has_value()) {
-    fmt::println(stderr, "\n`CheckedWritePage` failed to bring in page {}\n", page_id);
-    std::abort();
-  }
-
-  return std::move(guard_opt).value();
-}
-
-/**
- * @brief A wrapper around `CheckedReadPage` that unwraps the inner value if it exists.
- *
- * If `CheckedReadPage` returns a `std::nullopt`, **this function aborts the entire process.**
- *
- * This function should **only** be used for testing and ergonomic's sake. If it is at all possible that the buffer pool
- * manager might run out of memory, then use `CheckedPageWrite` to allow you to handle that case.
- *
- * See the documentation for `CheckedPageRead` for more information about implementation.
- *
- * @param page_id The ID of the page we want to read.
- * @param access_type The type of page access.
- * @return ReadPageGuard A page guard ensuring shared and read-only access to a page's data.
- */
-auto BufferPoolManager::ReadPage(page_id_t page_id, AccessType access_type) -> ReadPageGuard {
-  auto guard_opt = CheckedReadPage(page_id, access_type);
-
-  if (!guard_opt.has_value()) {
-    fmt::println(stderr, "\n`CheckedReadPage` failed to bring in page {}\n", page_id);
-    std::abort();
-  }
-
-  return std::move(guard_opt).value();
-}
-
-/**
  * @brief Flushes a page's data out to disk unsafely.
  *
  * This function will write out a page's data to disk if it has been modified. If the given page is not in memory, this
@@ -406,33 +332,6 @@ auto BufferPoolManager::FlushPageUnsafe(page_id_t page_id) -> bool {
     WriteFrameToDisk(frame->frame_id_, page_id);
     frame->is_dirty_ = false;
   }
-  return true;
-}
-
-/**
- * @brief Flushes a page's data out to disk safely.
- *
- * This function will write out a page's data to disk if it has been modified. If the given page is not in memory, this
- * function will return `false`.
- *
- * You should take a lock on the page in this function to ensure that a consistent state is flushed to disk.
- *
- * ### Implementation
- *
- * You should probably leave implementing this function until after you have completed `CheckedReadPage`,
- * `CheckedWritePage`, and `Flush` in the page guards, as it will likely be much easier to understand what to do.
- *
- * TODO(P1): Add implementation
- *
- * @param page_id The page ID of the page to be flushed.
- * @return `false` if the page could not be found in the page table; otherwise, `true`.
- */
-auto BufferPoolManager::FlushPage(page_id_t page_id) -> bool {
-  auto guard = CheckedReadPage(page_id);
-  if (!guard.has_value()) {
-    return false;
-  }
-  guard->Flush();
   return true;
 }
 
@@ -485,39 +384,6 @@ void BufferPoolManager::FlushAllPages() {
   for (const page_id_t page_id : page_ids) {
     FlushPage(page_id);
   }
-}
-
-/**
- * @brief Retrieves the pin count of a page. If the page does not exist in memory, return `std::nullopt`.
- *
- * This function is thread safe. Callers may invoke this function in a multi-threaded environment where multiple threads
- * access the same page.
- *
- * This function is intended for testing purposes. If this function is implemented incorrectly, it will definitely cause
- * problems with the test suite and autograder.
- *
- * # Implementation
- *
- * We will use this function to test if your buffer pool manager is managing pin counts correctly. Since the
- * `pin_count_` field in `FrameHeader` is an atomic type, you do not need to take the latch on the frame that holds the
- * page we want to look at. Instead, you can simply use an atomic `load` to safely load the value stored. You will still
- * need to take the buffer pool latch, however.
- *
- * Again, if you are unfamiliar with atomic types, see the official C++ docs
- * [here](https://en.cppreference.com/w/cpp/atomic/atomic).
- *
- * TODO(P1): Add implementation
- *
- * @param page_id The page ID of the page we want to get the pin count of.
- * @return std::optional<size_t> The pin count if the page exists; otherwise, `std::nullopt`.
- */
-auto BufferPoolManager::GetPinCount(page_id_t page_id) -> std::optional<size_t> {
-  std::scoped_lock lock(*bpm_latch_);
-  auto it = page_table_.find(page_id);
-  if (it == page_table_.end()) {
-    return std::nullopt;
-  }
-  return frames_[it->second]->pin_count_.load();
 }
 
 }  // namespace bustub

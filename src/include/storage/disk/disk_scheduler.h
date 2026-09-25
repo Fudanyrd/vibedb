@@ -15,6 +15,7 @@
 #include <future>  // NOLINT
 #include <optional>
 #include <thread>  // NOLINT
+#include <utility>
 #include <vector>
 
 #include "common/channel.h"
@@ -52,10 +53,31 @@ struct DiskRequest {
  */
 class DiskScheduler {
  public:
-  explicit DiskScheduler(DiskManager *disk_manager);
-  ~DiskScheduler();
+  explicit DiskScheduler(DiskManager *disk_manager) : disk_manager_(disk_manager) {
+    // Spawn the background thread
+    background_thread_.emplace([&] { StartWorkerThread(); });
+  }
+  ~DiskScheduler() {
+    // Put a `std::nullopt` in the queue to signal to exit the loop
+    request_queue_.Put(std::nullopt);
+    if (background_thread_.has_value()) {
+      background_thread_->join();
+    }
+  }
 
-  void Schedule(std::vector<DiskRequest> &requests);
+  /**
+   * @brief Schedules a request for the DiskManager to execute.
+   *
+   * @param requests The requests to be scheduled.
+   */
+
+  void Schedule(std::vector<DiskRequest> &requests) {
+    // Move each request into the shared queue. The DiskRequest owns a `std::promise` which is move-only, so we
+    // transfer ownership rather than copying.
+    for (auto &request : requests) {
+      request_queue_.Put(std::move(request));
+    }
+  }
 
   void StartWorkerThread();
 

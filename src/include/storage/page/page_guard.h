@@ -13,9 +13,9 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "buffer/arc_replacer.h"
-#include "buffer/buffer_pool_manager.h"
 #include "storage/disk/disk_scheduler.h"
 #include "storage/page/page.h"
 
@@ -23,6 +23,69 @@ namespace bustub {
 
 class BufferPoolManager;
 class FrameHeader;
+
+/**
+ * @brief A helper class for `BufferPoolManager` that manages a frame of memory and related metadata.
+ *
+ * This class represents headers for frames of memory that the `BufferPoolManager` stores pages of data into. Note that
+ * the actual frames of memory are not stored directly inside a `FrameHeader`, rather the `FrameHeader`s store pointer
+ * to the frames and are stored separately them.
+ *
+ * ---
+ *
+ * Something that may (or may not) be of interest to you is why the field `data_` is stored as a vector that is
+ * allocated on the fly instead of as a direct pointer to some pre-allocated chunk of memory.
+ *
+ * In a traditional production buffer pool manager, all memory that the buffer pool is intended to manage is allocated
+ * in one large contiguous array (think of a very large `malloc` call that allocates several gigabytes of memory up
+ * front). This large contiguous block of memory is then divided into contiguous frames. In other words, frames are
+ * defined by an offset from the base of the array in page-sized (4 KB) intervals.
+ *
+ * In BusTub, we instead allocate each frame on its own (via a `std::vector<char>`) in order to easily detect buffer
+ * overflow with address sanitizer. Since C++ has no notion of memory safety, it would be very easy to cast a page's
+ * data pointer into some large data type and start overwriting other pages of data if they were all contiguous.
+ *
+ * If you would like to attempt to use more efficient data structures for your buffer pool manager, you are free to do
+ * so. However, you will likely benefit significantly from detecting buffer overflow in future projects (especially
+ * project 2).
+ */
+class FrameHeader {
+  friend class BufferPoolManager;
+  friend class ReadPageGuard;
+  friend class WritePageGuard;
+
+ public:
+  explicit FrameHeader(frame_id_t frame_id);
+
+ private:
+  auto GetData() const -> const char *;
+  auto GetDataMut() -> char *;
+  void Reset();
+
+  /** @brief The frame ID / index of the frame this header represents. */
+  const frame_id_t frame_id_;
+
+  /** @brief The readers / writer latch for this frame. */
+  std::shared_mutex rwlatch_;
+
+  /** @brief The number of pins on this frame keeping the page in memory. */
+  std::atomic<size_t> pin_count_;
+
+  /** @brief The dirty flag. */
+  bool is_dirty_;
+
+  /**
+   * @brief A pointer to the data of the page that this frame holds.
+   *
+   * If the frame does not hold any page data, the frame contains all null bytes.
+   */
+  std::vector<char> data_;
+
+  /**
+   * @brief The page ID of the page currently stored in this frame, or `INVALID_PAGE_ID` when the frame is empty.
+   */
+  page_id_t page_id_{INVALID_PAGE_ID};
+};
 
 /**
  * @brief An RAII object that grants thread-safe read access to a page of data.
@@ -55,16 +118,35 @@ class ReadPageGuard {
   auto operator=(const ReadPageGuard &) -> ReadPageGuard & = delete;
   ReadPageGuard(ReadPageGuard &&that) noexcept;
   auto operator=(ReadPageGuard &&that) noexcept -> ReadPageGuard &;
-  auto GetPageId() const -> page_id_t;
-  auto GetData() const -> const char *;
+
+  /**
+   * @brief Gets the page ID of the page this guard is protecting.
+   */
+  auto GetPageId() const -> page_id_t { return page_id_; }
+
+  /**
+   * @brief Gets a `const` pointer to the page of data this guard is protecting.
+   */
+  auto GetData() const -> const char * {
+    BUSTUB_ASSERT(is_valid_, "tried to use an invalid read guard");
+    return frame_->GetData();
+  }
   template <class T>
   auto As() const -> const T * {
     return reinterpret_cast<const T *>(GetData());
   }
-  auto IsDirty() const -> bool;
+
+  /**
+   * @brief Returns whether the page is dirty (modified but not flushed to the disk).
+   */
+  auto IsDirty() const -> bool {
+    BUSTUB_ASSERT(is_valid_, "tried to use an invalid read guard");
+    return frame_->is_dirty_;
+  }
   void Flush();
   void Drop();
-  ~ReadPageGuard();
+  /** @brief The destructor for `ReadPageGuard`. This destructor simply calls `Drop()`. */
+  ~ReadPageGuard() { Drop(); }
 
  private:
   /** @brief Only the buffer pool manager is allowed to construct a valid `ReadPageGuard.` */
@@ -157,21 +239,49 @@ class WritePageGuard {
   auto operator=(const WritePageGuard &) -> WritePageGuard & = delete;
   WritePageGuard(WritePageGuard &&that) noexcept;
   auto operator=(WritePageGuard &&that) noexcept -> WritePageGuard &;
-  auto GetPageId() const -> page_id_t;
-  auto GetData() const -> const char *;
+
+  /**
+   * @brief Gets the page ID of the page this guard is protecting.
+   */
+  auto GetPageId() const -> page_id_t { return page_id_; }
+
+  /**
+   * @brief Gets a `const` pointer to the page of data this guard is protecting.
+   */
+  auto GetData() const -> const char * {
+    BUSTUB_ASSERT(is_valid_, "tried to use an invalid write guard");
+    return frame_->GetData();
+  }
   template <class T>
   auto As() const -> const T * {
     return reinterpret_cast<const T *>(GetData());
   }
-  auto GetDataMut() -> char *;
+
+  /**
+   * @brief Gets a mutable pointer to the page of data this guard is protecting.
+   */
+  auto GetDataMut() -> char * {
+    BUSTUB_ASSERT(is_valid_, "tried to use an invalid write guard");
+    return frame_->GetDataMut();
+  }
   template <class T>
   auto AsMut() -> T * {
     return reinterpret_cast<T *>(GetDataMut());
   }
-  auto IsDirty() const -> bool;
+
+  /**
+   * @brief Returns whether the page is dirty (modified but not flushed to the disk).
+   */
+  auto IsDirty() const -> bool {
+    BUSTUB_ASSERT(is_valid_, "tried to use an invalid write guard");
+    return frame_->is_dirty_;
+  }
+
   void Flush();
   void Drop();
-  ~WritePageGuard();
+
+  /** @brief The destructor for `WritePageGuard`. This destructor simply calls `Drop()`. */
+  ~WritePageGuard() { Drop(); }
 
  private:
   /** @brief Only the buffer pool manager is allowed to construct a valid `WritePageGuard.` */

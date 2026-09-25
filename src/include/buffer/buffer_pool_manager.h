@@ -17,6 +17,7 @@
 #include <optional>
 #include <shared_mutex>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "buffer/arc_replacer.h"
@@ -33,69 +34,6 @@ class ReadPageGuard;
 class WritePageGuard;
 
 /**
- * @brief A helper class for `BufferPoolManager` that manages a frame of memory and related metadata.
- *
- * This class represents headers for frames of memory that the `BufferPoolManager` stores pages of data into. Note that
- * the actual frames of memory are not stored directly inside a `FrameHeader`, rather the `FrameHeader`s store pointer
- * to the frames and are stored separately them.
- *
- * ---
- *
- * Something that may (or may not) be of interest to you is why the field `data_` is stored as a vector that is
- * allocated on the fly instead of as a direct pointer to some pre-allocated chunk of memory.
- *
- * In a traditional production buffer pool manager, all memory that the buffer pool is intended to manage is allocated
- * in one large contiguous array (think of a very large `malloc` call that allocates several gigabytes of memory up
- * front). This large contiguous block of memory is then divided into contiguous frames. In other words, frames are
- * defined by an offset from the base of the array in page-sized (4 KB) intervals.
- *
- * In BusTub, we instead allocate each frame on its own (via a `std::vector<char>`) in order to easily detect buffer
- * overflow with address sanitizer. Since C++ has no notion of memory safety, it would be very easy to cast a page's
- * data pointer into some large data type and start overwriting other pages of data if they were all contiguous.
- *
- * If you would like to attempt to use more efficient data structures for your buffer pool manager, you are free to do
- * so. However, you will likely benefit significantly from detecting buffer overflow in future projects (especially
- * project 2).
- */
-class FrameHeader {
-  friend class BufferPoolManager;
-  friend class ReadPageGuard;
-  friend class WritePageGuard;
-
- public:
-  explicit FrameHeader(frame_id_t frame_id);
-
- private:
-  auto GetData() const -> const char *;
-  auto GetDataMut() -> char *;
-  void Reset();
-
-  /** @brief The frame ID / index of the frame this header represents. */
-  const frame_id_t frame_id_;
-
-  /** @brief The readers / writer latch for this frame. */
-  std::shared_mutex rwlatch_;
-
-  /** @brief The number of pins on this frame keeping the page in memory. */
-  std::atomic<size_t> pin_count_;
-
-  /** @brief The dirty flag. */
-  bool is_dirty_;
-
-  /**
-   * @brief A pointer to the data of the page that this frame holds.
-   *
-   * If the frame does not hold any page data, the frame contains all null bytes.
-   */
-  std::vector<char> data_;
-
-  /**
-   * @brief The page ID of the page currently stored in this frame, or `INVALID_PAGE_ID` when the frame is empty.
-   */
-  page_id_t page_id_{INVALID_PAGE_ID};
-};
-
-/**
  * @brief The declaration of the `BufferPoolManager` class.
  *
  * As stated in the writeup, the buffer pool is responsible for moving physical pages of data back and forth from
@@ -108,21 +46,146 @@ class FrameHeader {
 class BufferPoolManager {
  public:
   BufferPoolManager(size_t num_frames, DiskManager *disk_manager, LogManager *log_manager = nullptr);
-  ~BufferPoolManager();
 
-  auto Size() const -> size_t;
-  auto NewPage() -> page_id_t;
+  /**
+   * @brief Destroys the `BufferPoolManager`, freeing up all memory that the buffer pool was using.
+   */
+  ~BufferPoolManager() = default;
+
+  /**
+   * @brief Returns the number of frames that this buffer pool manages.
+   */
+  auto Size() const -> size_t { return num_frames_; }
+
+  /**
+   * @brief Allocates a new page on disk.
+   *
+   * ### Implementation
+   *
+   * You will maintain a thread-safe, monotonically increasing counter in the form of a `std::atomic<page_id_t>`.
+   * See the documentation on [atomics](https://en.cppreference.com/w/cpp/atomic/atomic) for more information.
+   *
+   * @return The page ID of the newly allocated page.
+   */
+  auto NewPage() -> page_id_t { return next_page_id_.fetch_add(1); }
   auto DeletePage(page_id_t page_id) -> bool;
   auto CheckedWritePage(page_id_t page_id, AccessType access_type = AccessType::Unknown)
       -> std::optional<WritePageGuard>;
   auto CheckedReadPage(page_id_t page_id, AccessType access_type = AccessType::Unknown) -> std::optional<ReadPageGuard>;
-  auto WritePage(page_id_t page_id, AccessType access_type = AccessType::Unknown) -> WritePageGuard;
-  auto ReadPage(page_id_t page_id, AccessType access_type = AccessType::Unknown) -> ReadPageGuard;
+
+  /**
+   * @brief A wrapper around `CheckedWritePage` that unwraps the inner value if it exists.
+   *
+   * If `CheckedWritePage` returns a `std::nullopt`, **this function aborts the entire process.**
+   *
+   * This function should **only** be used for testing and ergonomic's sake. If it is at all possible that the buffer
+   * pool manager might run out of memory, then use `CheckedPageWrite` to allow you to handle that case.
+   *
+   * See the documentation for `CheckedPageWrite` for more information about implementation.
+   *
+   * @param page_id The ID of the page we want to read.
+   * @param access_type The type of page access.
+   * @return WritePageGuard A page guard ensuring exclusive and mutable access to a page's data.
+   */
+  auto WritePage(page_id_t page_id, AccessType access_type = AccessType::Unknown) -> WritePageGuard {
+    auto guard_opt = CheckedWritePage(page_id, access_type);
+
+    if (!guard_opt.has_value()) {
+      fmt::println(stderr, "\n`CheckedWritePage` failed to bring in page {}\n", page_id);
+      std::abort();
+    }
+
+    return std::move(guard_opt).value();
+  }
+
+  /**
+   * @brief A wrapper around `CheckedReadPage` that unwraps the inner value if it exists.
+   *
+   * If `CheckedReadPage` returns a `std::nullopt`, **this function aborts the entire process.**
+   *
+   * This function should **only** be used for testing and ergonomic's sake. If it is at all possible that the buffer
+   * pool manager might run out of memory, then use `CheckedPageWrite` to allow you to handle that case.
+   *
+   * See the documentation for `CheckedPageRead` for more information about implementation.
+   *
+   * @param page_id The ID of the page we want to read.
+   * @param access_type The type of page access.
+   * @return ReadPageGuard A page guard ensuring shared and read-only access to a page's data.
+   */
+  auto ReadPage(page_id_t page_id, AccessType access_type = AccessType::Unknown) -> ReadPageGuard {
+    auto guard_opt = CheckedReadPage(page_id, access_type);
+
+    if (!guard_opt.has_value()) {
+      fmt::println(stderr, "\n`CheckedReadPage` failed to bring in page {}\n", page_id);
+      std::abort();
+    }
+
+    return std::move(guard_opt).value();
+  }
   auto FlushPageUnsafe(page_id_t page_id) -> bool;
-  auto FlushPage(page_id_t page_id) -> bool;
+
+  /**
+   * @brief Flushes a page's data out to disk safely.
+   *
+   * This function will write out a page's data to disk if it has been modified. If the given page is not in memory,
+   * this function will return `false`.
+   *
+   * You should take a lock on the page in this function to ensure that a consistent state is flushed to disk.
+   *
+   * ### Implementation
+   *
+   * You should probably leave implementing this function until after you have completed `CheckedReadPage`,
+   * `CheckedWritePage`, and `Flush` in the page guards, as it will likely be much easier to understand what to do.
+   *
+   * TODO(P1): Add implementation
+   *
+   * @param page_id The page ID of the page to be flushed.
+   * @return `false` if the page could not be found in the page table; otherwise, `true`.
+   */
+  auto FlushPage(page_id_t page_id) -> bool {
+    auto guard = CheckedReadPage(page_id);
+    if (!guard.has_value()) {
+      return false;
+    }
+    guard->Flush();
+    return true;
+  }
   void FlushAllPagesUnsafe();
   void FlushAllPages();
-  auto GetPinCount(page_id_t page_id) -> std::optional<size_t>;
+
+  /**
+   * @brief Retrieves the pin count of a page. If the page does not exist in memory, return `std::nullopt`.
+   *
+   * This function is thread safe. Callers may invoke this function in a multi-threaded environment where multiple
+   * threads access the same page.
+   *
+   * This function is intended for testing purposes. If this function is implemented incorrectly, it will definitely
+   * cause problems with the test suite and autograder.
+   *
+   * # Implementation
+   *
+   * We will use this function to test if your buffer pool manager is managing pin counts correctly. Since the
+   * `pin_count_` field in `FrameHeader` is an atomic type, you do not need to take the latch on the frame that holds
+   * the page we want to look at. Instead, you can simply use an atomic `load` to safely load the value stored. You will
+   * still need to take the buffer pool latch, however.
+   *
+   * Again, if you are unfamiliar with atomic types, see the official C++ docs
+   * [here](https://en.cppreference.com/w/cpp/atomic/atomic).
+   *
+   * TODO(P1): Add implementation
+   *
+   * @param page_id The page ID of the page we want to get the pin count of.
+   * @return std::optional<size_t> The pin count if the page exists; otherwise, `std::nullopt`.
+   */
+  auto GetPinCount(page_id_t page_id) -> std::optional<size_t> {
+    std::scoped_lock lock(*bpm_latch_);
+    const auto &page_table = page_table_;
+    auto it = page_table.find(page_id);
+    if (it == page_table_.end()) {
+      return std::nullopt;
+    }
+    return frames_[it->second]->pin_count_.load();
+  }
 
  private:
   /** @brief The number of frames in the buffer pool. */

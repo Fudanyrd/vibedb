@@ -11,39 +11,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "storage/disk/disk_scheduler.h"
-#include <vector>
-#include "common/macros.h"
 #include "storage/disk/disk_manager.h"
 
 namespace bustub {
-
-DiskScheduler::DiskScheduler(DiskManager *disk_manager) : disk_manager_(disk_manager) {
-  // Spawn the background thread
-  background_thread_.emplace([&] { StartWorkerThread(); });
-}
-
-DiskScheduler::~DiskScheduler() {
-  // Put a `std::nullopt` in the queue to signal to exit the loop
-  request_queue_.Put(std::nullopt);
-  if (background_thread_.has_value()) {
-    background_thread_->join();
-  }
-}
-
-/**
- * TODO(P1): Add implementation
- *
- * @brief Schedules a request for the DiskManager to execute.
- *
- * @param requests The requests to be scheduled.
- */
-void DiskScheduler::Schedule(std::vector<DiskRequest> &requests) {
-  // Move each request into the shared queue. The DiskRequest owns a `std::promise` which is move-only, so we
-  // transfer ownership rather than copying.
-  for (auto &request : requests) {
-    request_queue_.Put(std::move(request));
-  }
-}
 
 /**
  * TODO(P1): Add implementation
@@ -54,7 +24,7 @@ void DiskScheduler::Schedule(std::vector<DiskRequest> &requests) {
  * return until ~DiskScheduler() is called. At that point you need to make sure that the function does return.
  */
 void DiskScheduler::StartWorkerThread() {
-  while (true) {
+  for (;;) {
     auto request = request_queue_.Get();
     if (!request.has_value()) {
       // A `std::nullopt` signals that the DiskScheduler is being destroyed.

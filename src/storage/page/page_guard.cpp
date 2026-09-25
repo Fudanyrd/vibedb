@@ -101,30 +101,6 @@ auto ReadPageGuard::operator=(ReadPageGuard &&that) noexcept -> ReadPageGuard & 
 }
 
 /**
- * @brief Gets the page ID of the page this guard is protecting.
- */
-auto ReadPageGuard::GetPageId() const -> page_id_t {
-  BUSTUB_ENSURE(is_valid_, "tried to use an invalid read guard");
-  return page_id_;
-}
-
-/**
- * @brief Gets a `const` pointer to the page of data this guard is protecting.
- */
-auto ReadPageGuard::GetData() const -> const char * {
-  BUSTUB_ENSURE(is_valid_, "tried to use an invalid read guard");
-  return frame_->GetData();
-}
-
-/**
- * @brief Returns whether the page is dirty (modified but not flushed to the disk).
- */
-auto ReadPageGuard::IsDirty() const -> bool {
-  BUSTUB_ENSURE(is_valid_, "tried to use an invalid read guard");
-  return frame_->is_dirty_;
-}
-
-/**
  * @brief Flushes this page's data safely to disk.
  *
  * TODO(P1): Add implementation.
@@ -166,9 +142,6 @@ void ReadPageGuard::Drop() {
   }
   frame_->rwlatch_.unlock_shared();
 }
-
-/** @brief The destructor for `ReadPageGuard`. This destructor simply calls `Drop()`. */
-ReadPageGuard::~ReadPageGuard() { Drop(); }
 
 /**********************************************************************************************************************/
 /**********************************************************************************************************************/
@@ -257,38 +230,6 @@ auto WritePageGuard::operator=(WritePageGuard &&that) noexcept -> WritePageGuard
 }
 
 /**
- * @brief Gets the page ID of the page this guard is protecting.
- */
-auto WritePageGuard::GetPageId() const -> page_id_t {
-  BUSTUB_ENSURE(is_valid_, "tried to use an invalid write guard");
-  return page_id_;
-}
-
-/**
- * @brief Gets a `const` pointer to the page of data this guard is protecting.
- */
-auto WritePageGuard::GetData() const -> const char * {
-  BUSTUB_ENSURE(is_valid_, "tried to use an invalid write guard");
-  return frame_->GetData();
-}
-
-/**
- * @brief Gets a mutable pointer to the page of data this guard is protecting.
- */
-auto WritePageGuard::GetDataMut() -> char * {
-  BUSTUB_ENSURE(is_valid_, "tried to use an invalid write guard");
-  return frame_->GetDataMut();
-}
-
-/**
- * @brief Returns whether the page is dirty (modified but not flushed to the disk).
- */
-auto WritePageGuard::IsDirty() const -> bool {
-  BUSTUB_ENSURE(is_valid_, "tried to use an invalid write guard");
-  return frame_->is_dirty_;
-}
-
-/**
  * @brief Flushes this page's data safely to disk.
  *
  * TODO(P1): Add implementation.
@@ -330,8 +271,5 @@ void WritePageGuard::Drop() {
   }
   frame_->rwlatch_.unlock();
 }
-
-/** @brief The destructor for `WritePageGuard`. This destructor simply calls `Drop()`. */
-WritePageGuard::~WritePageGuard() { Drop(); }
 
 }  // namespace bustub
