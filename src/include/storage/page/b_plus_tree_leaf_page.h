@@ -74,6 +74,21 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   void SetNextPageId(page_id_t next_page_id);
   auto KeyAt(int index) const -> KeyType;
 
+  auto ValueAt(int index) const -> ValueType;
+
+  void SetKeyAt(int index, const KeyType &key);
+
+  void SetValueAt(int index, const ValueType &value);
+
+  /**
+   * @brief Return the index of the first key that is not less than `key`.
+   *
+   * @param key The key being searched for.
+   * @param comparator The comparator used to order keys.
+   * @return The first index `i` such that `KeyAt(i) >= key`, or `GetSize()` if none.
+   */
+  auto LowerBound(const KeyType &key, const KeyComparator &comparator) const -> int;
+
   /**
    * @brief for test only return a string representing all keys in
    * this leaf page formatted as "(tombkey1, tombkey2, ...|key1,key2,key3,...)"

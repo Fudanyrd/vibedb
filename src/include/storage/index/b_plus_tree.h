@@ -95,7 +95,10 @@ class BPlusTree {
   auto GetValue(const KeyType &key, std::vector<ValueType> *result) -> bool;
 
   // Return the page id of the root node
-  auto GetRootPageId() -> page_id_t;
+  auto GetRootPageId() -> page_id_t {
+    auto header_guard = bpm_->ReadPage(header_page_id_);
+    return header_guard.As<BPlusTreeHeaderPage>()->root_page_id_;
+  }
 
   // Index iterator
   auto Begin() -> INDEXITERATOR_TYPE;
@@ -127,6 +130,16 @@ class BPlusTree {
   void PrintTree(page_id_t page_id, const BPlusTreePage *page);
 
   auto ToPrintableBPlusTree(page_id_t root_id) -> PrintableBPlusTree;
+
+  /**
+   * @brief Recursively insert a key/value pair into the subtree rooted at `guard`.
+   *
+   * Returns true if the subtree split. When a split happens, `split_key` and
+   * `split_page` are set to the separator key and the new right sibling that the
+   * caller should insert into its own page.
+   */
+  auto InsertRecursive(WritePageGuard guard, const KeyType &key, const ValueType &value, KeyType *split_key,
+                       page_id_t *split_page) -> bool;
 
   // member variable
   std::string index_name_;

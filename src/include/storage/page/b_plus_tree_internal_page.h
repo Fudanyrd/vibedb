@@ -64,6 +64,22 @@ class BPlusTreeInternalPage : public BPlusTreePage {
 
   auto ValueAt(int index) const -> ValueType;
 
+  void SetValueAt(int index, const ValueType &value);
+
+  /**
+   * @brief Find the index of the child pointer that should be followed for `key`.
+   *
+   * Because index 0 holds an invalid key (it is the lower bound of the leftmost
+   * child), the lookup ignores it and returns the largest index `i` such that
+   * `KeyAt(i) <= key`, defaulting to 0 when no valid key is less than or equal
+   * to `key`.
+   *
+   * @param key The key being searched for.
+   * @param comparator The comparator used to order keys.
+   * @return The index of the child to descend into.
+   */
+  auto Lookup(const KeyType &key, const KeyComparator &comparator) const -> int;
+
   /**
    * @brief For test only, return a string representing all keys in
    * this internal page, formatted as "(key1,key2,key3,...)"
