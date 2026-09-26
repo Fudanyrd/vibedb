@@ -106,6 +106,157 @@ class BPlusTreeLeafPage : public BPlusTreePage {
 
   void SetValueAt(int index, const ValueType &value) { rid_array_[index] = value; }
 
+  /** @return The number of pending deletions currently buffered in this page. */
+  auto GetNumTombstones() const -> size_t { return num_tombstones_; }
+
+  /** @return The maximum number of pending deletions this page can buffer. */
+  auto GetTombstoneCapacity() const -> size_t { return LEAF_PAGE_TOMB_CNT; }
+
+  /** @return Whether the entry at `index` has a pending deletion. */
+  auto IsTombstoned(int index) const -> bool {
+    for (size_t i = 0; i < num_tombstones_; i++) {
+      if (static_cast<int>(tombstones_[i]) == index) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** @brief Buffer a pending deletion for the entry at `index` (assumes there is room). */
+  void AddTombstone(int index) { tombstones_[num_tombstones_++] = static_cast<size_t>(index); }
+
+  /** @brief Drop the pending deletion for the entry at `index`, keeping the rest in recency order. */
+  void ClearTombstone(int index) {
+    size_t write = 0;
+    for (size_t read = 0; read < num_tombstones_; read++) {
+      if (static_cast<int>(tombstones_[read]) != index) {
+        tombstones_[write++] = tombstones_[read];
+      }
+    }
+    num_tombstones_ = write;
+  }
+
+  /**
+   * @brief Physically remove the entry at `index`, maintaining the tombstone buffer.
+   *
+   * Any pending deletion for the removed entry is discarded and all buffered indexes after `index` are shifted down.
+   */
+  void RemoveEntryAt(int index) {
+    int size = GetSize();
+    for (int i = index; i < size - 1; i++) {
+      key_array_[i] = key_array_[i + 1];
+      rid_array_[i] = rid_array_[i + 1];
+    }
+    SetSize(size - 1);
+    size_t write = 0;
+    for (size_t read = 0; read < num_tombstones_; read++) {
+      size_t tomb = tombstones_[read];
+      if (static_cast<int>(tomb) == index) {
+        continue;
+      }
+      if (static_cast<int>(tomb) > index) {
+        tomb--;
+      }
+      tombstones_[write++] = tomb;
+    }
+    num_tombstones_ = write;
+  }
+
+  /** @brief Physically remove the entry associated with the oldest pending deletion. */
+  void EvictOldestTombstone() { RemoveEntryAt(static_cast<int>(tombstones_[0])); }
+
+  /** @brief Insert an entry at `index`, shifting buffered tombstone indexes as necessary. */
+  void InsertAt(int index, const KeyType &key, const ValueType &value) {
+    for (int i = GetSize(); i > index; i--) {
+      key_array_[i] = key_array_[i - 1];
+      rid_array_[i] = rid_array_[i - 1];
+    }
+    key_array_[index] = key;
+    rid_array_[index] = value;
+    ChangeSizeBy(1);
+    for (size_t i = 0; i < num_tombstones_; i++) {
+      if (static_cast<int>(tombstones_[i]) >= index) {
+        tombstones_[i]++;
+      }
+    }
+  }
+
+  /**
+   * @brief Insert `key`/`value`, or revive a tombstoned entry with the new value.
+   * @return false if a live (non-tombstoned) entry with `key` already exists.
+   */
+  auto InsertPair(const KeyType &key, const ValueType &value, const KeyComparator &comparator) -> bool {
+    int index = LowerBound(key, comparator);
+    if (index < GetSize() && comparator(KeyAt(index), key) == 0) {
+      if (!IsTombstoned(index)) {
+        return false;
+      }
+      ClearTombstone(index);
+      SetValueAt(index, value);
+      return true;
+    }
+    InsertAt(index, key, value);
+    return true;
+  }
+
+  /**
+   * @brief Split this leaf by moving entries `[mid, GetSize())` into `new_leaf`.
+   *
+   * Tombstones are partitioned by recency order and re-based onto their new page.
+   */
+  void SplitMoveTo(BPlusTreeLeafPage *new_leaf, int mid) {
+    int total = GetSize();
+    for (int i = mid; i < total; i++) {
+      new_leaf->key_array_[i - mid] = key_array_[i];
+      new_leaf->rid_array_[i - mid] = rid_array_[i];
+    }
+    new_leaf->SetSize(total - mid);
+    SetSize(mid);
+
+    std::vector<size_t> left;
+    std::vector<size_t> right;
+    left.reserve(num_tombstones_);
+    right.reserve(num_tombstones_);
+    for (size_t i = 0; i < num_tombstones_; i++) {
+      size_t tomb = tombstones_[i];
+      if (static_cast<int>(tomb) < mid) {
+        left.push_back(tomb);
+      } else {
+        right.push_back(tomb - static_cast<size_t>(mid));
+      }
+    }
+    for (size_t i = 0; i < left.size(); i++) {
+      tombstones_[i] = left[i];
+    }
+    for (size_t i = 0; i < right.size(); i++) {
+      new_leaf->tombstones_[i] = right[i];
+    }
+    num_tombstones_ = left.size();
+    new_leaf->num_tombstones_ = right.size();
+  }
+
+  /**
+   * @brief Merge `right` into this page. `this` must be the left page of the pair.
+   *
+   * The recipient's pending deletions are considered older, so they are applied first whenever the combined
+   * tombstone buffers would overflow. `right`'s (more recent) deletions are always preserved.
+   */
+  void MergeFrom(BPlusTreeLeafPage *right) {
+    while (num_tombstones_ + right->num_tombstones_ > LEAF_PAGE_TOMB_CNT) {
+      EvictOldestTombstone();
+    }
+    int base = GetSize();
+    for (int i = 0; i < right->GetSize(); i++) {
+      key_array_[base + i] = right->key_array_[i];
+      rid_array_[base + i] = right->rid_array_[i];
+    }
+    SetSize(base + right->GetSize());
+    for (size_t i = 0; i < right->num_tombstones_; i++) {
+      tombstones_[num_tombstones_++] = static_cast<size_t>(base) + right->tombstones_[i];
+    }
+    SetNextPageId(right->GetNextPageId());
+  }
+
   /**
    * @brief Return the index of the first key that is not less than `key`.
    *

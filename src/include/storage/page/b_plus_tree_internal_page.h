@@ -77,6 +77,43 @@ class BPlusTreeInternalPage : public BPlusTreePage {
 
   void SetValueAt(int index, const ValueType &value) { page_id_array_[index] = value; }
 
+  /** @brief Insert a key/child-pointer pair at `index`, shifting subsequent entries right. */
+  void InsertAt(int index, const KeyType &key, const ValueType &value) {
+    for (int i = GetSize(); i > index; i--) {
+      key_array_[i] = key_array_[i - 1];
+      page_id_array_[i] = page_id_array_[i - 1];
+    }
+    key_array_[index] = key;
+    page_id_array_[index] = value;
+    ChangeSizeBy(1);
+  }
+
+  /** @brief Remove the key/child-pointer pair at `index`, shifting subsequent entries left. */
+  void RemoveAt(int index) {
+    for (int i = index; i < GetSize() - 1; i++) {
+      key_array_[i] = key_array_[i + 1];
+      page_id_array_[i] = page_id_array_[i + 1];
+    }
+    ChangeSizeBy(-1);
+  }
+
+  /**
+   * @brief Insert `child` as the new first child, using `separator` for the child that gets pushed to index 1.
+   *
+   * Unlike `InsertAt(0, ...)`, this keeps the special invalid key at index 0 from leaking into a separator slot.
+   */
+  void PrependChild(const ValueType &child, const KeyType &separator) {
+    for (int i = GetSize(); i > 0; i--) {
+      key_array_[i] = key_array_[i - 1];
+      page_id_array_[i] = page_id_array_[i - 1];
+    }
+    page_id_array_[0] = child;
+    if (GetSize() >= 1) {
+      key_array_[1] = separator;
+    }
+    ChangeSizeBy(1);
+  }
+
   /**
    * @brief Find the index of the child pointer that should be followed for `key`.
    *

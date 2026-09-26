@@ -15,18 +15,18 @@ namespace bustub {
 
 using bustub::DiskManagerUnlimitedMemory;
 
-TEST(BPlusTreeTests, DISABLED_TombstoneBasicTest) {
+TEST(BPlusTreeTests, TombstoneBasicTest) {
   auto key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema.get());
 
-  auto *disk_manager = new DiskManagerUnlimitedMemory();
-  auto *bpm = new BufferPoolManager(50, disk_manager);
+  std::unique_ptr<DiskManagerUnlimitedMemory> disk_manager = std::make_unique<DiskManagerUnlimitedMemory>();
+  std::unique_ptr<BufferPoolManager> bpm = std::make_unique<BufferPoolManager>(50, disk_manager.get());
 
   // create and fetch header_page
   page_id_t page_id = bpm->NewPage();
 
   // create b+ tree
-  BPlusTree<GenericKey<8>, RID, GenericComparator<8>, 2> tree("foo_pk", page_id, bpm, comparator, 4, 4);
+  BPlusTree<GenericKey<8>, RID, GenericComparator<8>, 2> tree("foo_pk", page_id, bpm.get(), comparator, 4, 4);
   GenericKey<8> index_key;
   RID rid;
 
@@ -56,7 +56,7 @@ TEST(BPlusTreeTests, DISABLED_TombstoneBasicTest) {
   }
 
   std::vector<int64_t> tombstones;
-  auto leaf = IndexLeaves<GenericKey<8>, RID, GenericComparator<8>, 2>(tree.GetRootPageId(), bpm);
+  auto leaf = IndexLeaves<GenericKey<8>, RID, GenericComparator<8>, 2>(tree.GetRootPageId(), bpm.get());
   while (leaf.Valid()) {
     for (auto t : (*leaf)->GetTombstones()) {
       tombstones.push_back(t.GetAsInteger());
@@ -78,7 +78,7 @@ TEST(BPlusTreeTests, DISABLED_TombstoneBasicTest) {
     tree.Insert(index_key, rid);
   }
 
-  leaf = IndexLeaves<GenericKey<8>, RID, GenericComparator<8>, 2>(tree.GetRootPageId(), bpm);
+  leaf = IndexLeaves<GenericKey<8>, RID, GenericComparator<8>, 2>(tree.GetRootPageId(), bpm.get());
   while (leaf.Valid()) {
     EXPECT_EQ((*leaf)->GetTombstones().size(), 0);
     ++leaf;
@@ -96,7 +96,7 @@ TEST(BPlusTreeTests, DISABLED_TombstoneBasicTest) {
 
   to_delete.clear();
   {
-    auto leaf = IndexLeaves<GenericKey<8>, RID, GenericComparator<8>, 2>(tree.GetRootPageId(), bpm);
+    auto leaf = IndexLeaves<GenericKey<8>, RID, GenericComparator<8>, 2>(tree.GetRootPageId(), bpm.get());
     while (leaf.Valid()) {
       EXPECT_EQ(2, (*leaf)->GetMinSize());
       if ((*leaf)->GetSize() > (*leaf)->GetMinSize()) {
@@ -115,7 +115,7 @@ TEST(BPlusTreeTests, DISABLED_TombstoneBasicTest) {
   }
 
   tombstones.clear();
-  leaf = IndexLeaves<GenericKey<8>, RID, GenericComparator<8>, 2>(tree.GetRootPageId(), bpm);
+  leaf = IndexLeaves<GenericKey<8>, RID, GenericComparator<8>, 2>(tree.GetRootPageId(), bpm.get());
   while (leaf.Valid()) {
     for (auto t : (*leaf)->GetTombstones()) {
       tombstones.push_back(t.GetAsInteger());
@@ -139,7 +139,7 @@ TEST(BPlusTreeTests, DISABLED_TombstoneBasicTest) {
     tree.Remove(index_key);
   }
 
-  leaf = IndexLeaves<GenericKey<8>, RID, GenericComparator<8>, 2>(tree.GetRootPageId(), bpm);
+  leaf = IndexLeaves<GenericKey<8>, RID, GenericComparator<8>, 2>(tree.GetRootPageId(), bpm.get());
   size_t tot_tombs = 0;
   while (leaf.Valid()) {
     tot_tombs += (*leaf)->GetTombstones().size();
@@ -150,12 +150,9 @@ TEST(BPlusTreeTests, DISABLED_TombstoneBasicTest) {
   EXPECT_GT(tot_tombs, ((num_keys - 1) / 4) * 2);
   EXPECT_LT(tot_tombs, num_keys);
   EXPECT_EQ(tree.Begin().IsEnd(), true);
-
-  delete bpm;
-  delete disk_manager;
 }
 
-TEST(BPlusTreeTests, DISABLED_TombstoneSplitTest) {
+TEST(BPlusTreeTests, TombstoneSplitTest) {
   auto key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema.get());
 
@@ -217,7 +214,7 @@ TEST(BPlusTreeTests, DISABLED_TombstoneSplitTest) {
   delete disk_manager;
 }
 
-TEST(BPlusTreeTests, DISABLED_TombstoneBorrowTest) {
+TEST(BPlusTreeTests, TombstoneBorrowTest) {
   using LeafPage = BPlusTreeLeafPage<GenericKey<8>, RID, GenericComparator<8>, 1>;
   auto key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema.get());
@@ -278,7 +275,7 @@ TEST(BPlusTreeTests, DISABLED_TombstoneBorrowTest) {
   delete disk_manager;
 }
 
-TEST(BPlusTreeTests, DISABLED_TombstoneCoalesceTest) {
+TEST(BPlusTreeTests, TombstoneCoalesceTest) {
   using LeafPage = BPlusTreeLeafPage<GenericKey<8>, RID, GenericComparator<8>, 2>;
   auto key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema.get());

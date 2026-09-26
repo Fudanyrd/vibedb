@@ -139,7 +139,21 @@ class BPlusTree {
    * caller should insert into its own page.
    */
   auto InsertRecursive(WritePageGuard guard, const KeyType &key, const ValueType &value, KeyType *split_key,
-                       page_id_t *split_page) -> bool;
+                       page_id_t *split_page, bool *inserted) -> bool;
+
+  /**
+   * @brief Remove `key` from the subtree rooted at `guard`.
+   *
+   * Returns true if `guard`'s page underflowed and needs to be rebalanced by its parent. `found` is set to whether
+   * the key was present and removed.
+   */
+  auto RemoveRecursive(WritePageGuard guard, const KeyType &key, bool *found) -> bool;
+
+  /** @brief Rebalance an underflowing child of `parent` by redistributing with, or merging into, a sibling. */
+  void RebalanceChild(InternalPage *parent, int child_index);
+
+  /** @brief Physically apply the pending deletion for `key` in `leaf`, buffering a new tombstone when possible. */
+  auto DeleteFromLeaf(LeafPage *leaf, const KeyType &key) -> bool;
 
   // member variable
   std::string index_name_;
