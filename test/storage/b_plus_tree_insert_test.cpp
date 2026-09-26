@@ -24,17 +24,17 @@ namespace bustub {
 
 using bustub::DiskManagerUnlimitedMemory;
 
-TEST(BPlusTreeTests, DISABLED_BasicInsertTest) {
+TEST(BPlusTreeTests, BasicInsertTest) {
   // create KeyComparator and index schema
   auto key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema.get());
 
   auto disk_manager = std::make_unique<DiskManagerUnlimitedMemory>();
-  auto *bpm = new BufferPoolManager(50, disk_manager.get());
+  std::unique_ptr<BufferPoolManager> bpm = std::make_unique<BufferPoolManager>(50, disk_manager.get());
   // allocate header_page
   page_id_t page_id = bpm->NewPage();
   // create b+ tree
-  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", page_id, bpm, comparator, 2, 3);
+  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", page_id, bpm.get(), comparator, 2, 3);
   GenericKey<8> index_key;
   RID rid;
 
@@ -53,20 +53,18 @@ TEST(BPlusTreeTests, DISABLED_BasicInsertTest) {
   auto root_as_leaf = root_page_guard.As<BPlusTreeLeafPage<GenericKey<8>, RID, GenericComparator<8>>>();
   ASSERT_EQ(root_as_leaf->GetSize(), 1);
   ASSERT_EQ(comparator(root_as_leaf->KeyAt(0), index_key), 0);
-
-  delete bpm;
 }
 
-TEST(BPlusTreeTests, DISABLED_OptimisticInsertTest) {
+TEST(BPlusTreeTests, OptimisticInsertTest) {
   auto key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema.get());
 
   auto disk_manager = std::make_unique<DiskManagerUnlimitedMemory>();
-  auto *bpm = new BufferPoolManager(50, disk_manager.get());
+  std::unique_ptr<BufferPoolManager> bpm = std::make_unique<BufferPoolManager>(50, disk_manager.get());
   // allocate header_page
   page_id_t page_id = bpm->NewPage();
   // create b+ tree
-  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", page_id, bpm, comparator, 4, 3);
+  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", page_id, bpm.get(), comparator, 4, 3);
   GenericKey<8> index_key;
   RID rid;
 
@@ -89,7 +87,7 @@ TEST(BPlusTreeTests, DISABLED_OptimisticInsertTest) {
   }
 
   size_t to_insert = 2 * num_keys;
-  auto leaf = IndexLeaves<GenericKey<8>, RID, GenericComparator<8>>(tree.GetRootPageId(), bpm);
+  auto leaf = IndexLeaves<GenericKey<8>, RID, GenericComparator<8>>(tree.GetRootPageId(), bpm.get());
   while (leaf.Valid()) {
     if (((*leaf)->GetSize() + 1) < (*leaf)->GetMaxSize()) {
       to_insert = (*leaf)->KeyAt(0).GetAsInteger() + 1;
@@ -111,21 +109,19 @@ TEST(BPlusTreeTests, DISABLED_OptimisticInsertTest) {
 
   EXPECT_GT(new_reads - base_reads, 0);
   EXPECT_EQ(new_writes - base_writes, 1);
-
-  delete bpm;
 }
 
-TEST(BPlusTreeTests, DISABLED_InsertTest1NoIterator) {
+TEST(BPlusTreeTests, InsertTest1NoIterator) {
   // create KeyComparator and index schema
   auto key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema.get());
 
   auto disk_manager = std::make_unique<DiskManagerUnlimitedMemory>();
-  auto *bpm = new BufferPoolManager(50, disk_manager.get());
+  std::unique_ptr<BufferPoolManager> bpm = std::make_unique<BufferPoolManager>(50, disk_manager.get());
   // allocate header_page
   page_id_t page_id = bpm->NewPage();
   // create b+ tree
-  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", page_id, bpm, comparator, 2, 3);
+  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", page_id, bpm.get(), comparator, 2, 3);
   GenericKey<8> index_key;
   RID rid;
 
@@ -151,7 +147,6 @@ TEST(BPlusTreeTests, DISABLED_InsertTest1NoIterator) {
     int64_t value = key & 0xFFFFFFFF;
     EXPECT_EQ(rids[0].GetSlotNum(), value);
   }
-  delete bpm;
 }
 
 TEST(BPlusTreeTests, DISABLED_InsertTest2) {
@@ -160,11 +155,11 @@ TEST(BPlusTreeTests, DISABLED_InsertTest2) {
   GenericComparator<8> comparator(key_schema.get());
 
   auto disk_manager = std::make_unique<DiskManagerUnlimitedMemory>();
-  auto *bpm = new BufferPoolManager(50, disk_manager.get());
+  std::unique_ptr<BufferPoolManager> bpm = std::make_unique<BufferPoolManager>(50, disk_manager.get());
   // allocate header_page
   page_id_t page_id = bpm->NewPage();
   // create b+ tree
-  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", page_id, bpm, comparator, 2, 3);
+  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", page_id, bpm.get(), comparator, 2, 3);
   GenericKey<8> index_key;
   RID rid;
 
@@ -208,6 +203,5 @@ TEST(BPlusTreeTests, DISABLED_InsertTest2) {
     EXPECT_EQ(location.GetSlotNum(), current_key);
     current_key = current_key + 1;
   }
-  delete bpm;
 }
 }  // namespace bustub

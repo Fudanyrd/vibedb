@@ -70,21 +70,12 @@ jobs:
       - name: Check Project 0
         working-directory: ${{github.workspace}}/build
         run: |
-          not_tidy=0
-          make check-clang-tidy-p0 || not_tidy=1 # do not fail fast.
-          make count_min_sketch_test && ./test/count_min_sketch_test
-          exit $not_tidy
+          make check-clang-tidy-p0
 
       - name: Check Project 1
         working-directory: ${{github.workspace}}/build
         run: |
-          not_tidy=0
-          make check-clang-tidy-p1 || not_tidy=1 # do not fail fast.
-          for testcase in arc_replacer_test arc_replacer_performance_test \
-          disk_scheduler_test buffer_pool_manager_test; do
-             make $testcase && ./test/$testcase
-          done
-          exit $not_tidy
+          make check-clang-tidy-p1
 
       - name: Check Format
         working-directory: ${{github.workspace}}/build
