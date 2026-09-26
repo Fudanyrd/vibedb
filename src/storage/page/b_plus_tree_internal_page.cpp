@@ -10,91 +10,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <iostream>
-#include <sstream>
-
-#include "common/exception.h"
 #include "storage/page/b_plus_tree_internal_page.h"
 
 namespace bustub {
-/*****************************************************************************
- * HELPER METHODS AND UTILITIES
- *****************************************************************************/
 
-/**
- * @brief Init method after creating a new internal page.
- *
- * Writes the necessary header information to a newly created page,
- * including set page type, set current size, set page id, set parent id and set max page size,
- * must be called after the creation of a new page to make a valid BPlusTreeInternalPage.
- *
- * @param max_size Maximal size of the page
- */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Init(int max_size) {
-  SetPageType(IndexPageType::INTERNAL_PAGE);
-  SetSize(0);
-  SetMaxSize(max_size);
-}
-
-/**
- * @brief Helper method to get/set the key associated with input "index"(a.k.a
- * array offset).
- *
- * @param index The index of the key to get. Index must be non-zero.
- * @return Key at index
- */
-INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::KeyAt(int index) const -> KeyType { return key_array_[index]; }
-
-/**
- * @brief Set key at the specified index.
- *
- * @param index The index of the key to set. Index must be non-zero.
- * @param key The new value for key
- */
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) { key_array_[index] = key; }
-
-/**
- * @brief Helper method to get the value associated with input "index"(a.k.a array
- * offset)
- *
- * @param index The index of the value to get.
- * @return Value at index
- */
-INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueAt(int index) const -> ValueType { return page_id_array_[index]; }
-
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetValueAt(int index, const ValueType &value) { page_id_array_[index] = value; }
-
-INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueIndex(const ValueType &value) const -> int {
-  for (int i = 0; i < GetSize(); i++) {
-    if (page_id_array_[i] == value) {
-      return i;
-    }
-  }
-  return -1;
-}
-
-INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::Lookup(const KeyType &key, const KeyComparator &comparator) const -> int {
-  int lo = 1;
-  int hi = GetSize() - 1;
-  int index = 0;
-  while (lo <= hi) {
-    int mid = lo + (hi - lo) / 2;
-    if (comparator(key_array_[mid], key) <= 0) {
-      index = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  return index;
-}
+// All methods of `BPlusTreeInternalPage` are defined inline in the header.
 
 // valuetype for internalNode should be page id_t
 template class BPlusTreeInternalPage<GenericKey<4>, page_id_t, GenericComparator<4>>;

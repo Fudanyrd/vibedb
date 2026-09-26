@@ -65,20 +65,46 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   BPlusTreeLeafPage() = delete;
   BPlusTreeLeafPage(const BPlusTreeLeafPage &other) = delete;
 
-  void Init(int max_size = LEAF_PAGE_SLOT_CNT);
+  /**
+   * @brief Init method after creating a new leaf page
+   *
+   * After creating a new leaf page from buffer pool, must call initialize method to set default values,
+   * including set page type, set current size to zero, set page id/parent id, set
+   * next page id and set max size.
+   *
+   * @param max_size Max size of the leaf node
+   */
+  void Init(int max_size = LEAF_PAGE_SLOT_CNT) {
+    SetPageType(IndexPageType::LEAF_PAGE);
+    SetSize(0);
+    SetMaxSize(max_size);
+    SetNextPageId(INVALID_PAGE_ID);
+    num_tombstones_ = 0;
+  }
 
-  auto GetTombstones() const -> std::vector<KeyType>;
+  /**
+   * @brief Helper function for fetching tombstones of a page.
+   * @return The last `NumTombs` keys with pending deletes in this page in order of recency (oldest at front).
+   */
+  auto GetTombstones() const -> std::vector<KeyType> {
+    std::vector<KeyType> tombstones;
+    tombstones.reserve(num_tombstones_);
+    for (size_t i = 0; i < num_tombstones_; i++) {
+      tombstones.push_back(key_array_[tombstones_[i]]);
+    }
+    return tombstones;
+  }
 
   // Helper methods
-  auto GetNextPageId() const -> page_id_t;
-  void SetNextPageId(page_id_t next_page_id);
-  auto KeyAt(int index) const -> KeyType;
+  auto GetNextPageId() const -> page_id_t { return next_page_id_; }
+  void SetNextPageId(page_id_t next_page_id) { next_page_id_ = next_page_id; }
+  auto KeyAt(int index) const -> KeyType { return key_array_[index]; }
 
-  auto ValueAt(int index) const -> ValueType;
+  auto ValueAt(int index) const -> ValueType { return rid_array_[index]; }
 
-  void SetKeyAt(int index, const KeyType &key);
+  void SetKeyAt(int index, const KeyType &key) { key_array_[index] = key; }
 
-  void SetValueAt(int index, const ValueType &value);
+  void SetValueAt(int index, const ValueType &value) { rid_array_[index] = value; }
 
   /**
    * @brief Return the index of the first key that is not less than `key`.
@@ -87,7 +113,19 @@ class BPlusTreeLeafPage : public BPlusTreePage {
    * @param comparator The comparator used to order keys.
    * @return The first index `i` such that `KeyAt(i) >= key`, or `GetSize()` if none.
    */
-  auto LowerBound(const KeyType &key, const KeyComparator &comparator) const -> int;
+  auto LowerBound(const KeyType &key, const KeyComparator &comparator) const -> int {
+    int lo = 0;
+    int hi = GetSize();
+    while (lo < hi) {
+      int mid = lo + (hi - lo) / 2;
+      if (comparator(key_array_[mid], key) < 0) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  }
 
   /**
    * @brief for test only return a string representing all keys in

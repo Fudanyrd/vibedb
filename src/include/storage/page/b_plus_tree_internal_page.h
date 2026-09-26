@@ -50,21 +50,32 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   BPlusTreeInternalPage() = delete;
   BPlusTreeInternalPage(const BPlusTreeInternalPage &other) = delete;
 
-  void Init(int max_size = INTERNAL_PAGE_SLOT_CNT);
+  void Init(int max_size = INTERNAL_PAGE_SLOT_CNT) {
+    SetPageType(IndexPageType::INTERNAL_PAGE);
+    SetSize(0);
+    SetMaxSize(max_size);
+  }
 
-  auto KeyAt(int index) const -> KeyType;
+  auto KeyAt(int index) const -> KeyType { return key_array_[index]; }
 
-  void SetKeyAt(int index, const KeyType &key);
+  void SetKeyAt(int index, const KeyType &key) { key_array_[index] = key; }
 
   /**
    * @param value The value to search for
    * @return The index that corresponds to the specified value
    */
-  auto ValueIndex(const ValueType &value) const -> int;
+  auto ValueIndex(const ValueType &value) const -> int {
+    for (int i = 0; i < GetSize(); i++) {
+      if (page_id_array_[i] == value) {
+        return i;
+      }
+    }
+    return -1;
+  }
 
-  auto ValueAt(int index) const -> ValueType;
+  auto ValueAt(int index) const -> ValueType { return page_id_array_[index]; }
 
-  void SetValueAt(int index, const ValueType &value);
+  void SetValueAt(int index, const ValueType &value) { page_id_array_[index] = value; }
 
   /**
    * @brief Find the index of the child pointer that should be followed for `key`.
@@ -78,7 +89,21 @@ class BPlusTreeInternalPage : public BPlusTreePage {
    * @param comparator The comparator used to order keys.
    * @return The index of the child to descend into.
    */
-  auto Lookup(const KeyType &key, const KeyComparator &comparator) const -> int;
+  auto Lookup(const KeyType &key, const KeyComparator &comparator) const -> int {
+    int lo = 1;
+    int hi = GetSize() - 1;
+    int index = 0;
+    while (lo <= hi) {
+      int mid = lo + (hi - lo) / 2;
+      if (comparator(key_array_[mid], key) <= 0) {
+        index = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return index;
+  }
 
   /**
    * @brief For test only, return a string representing all keys in

@@ -51,27 +51,30 @@ class BPlusTreePage {
   BPlusTreePage(const BPlusTreePage &other) = delete;
   ~BPlusTreePage() = delete;
 
-  auto IsLeafPage() const -> bool;
-  void SetPageType(IndexPageType page_type);
+  auto IsLeafPage() const -> bool { return page_type_ == IndexPageType::LEAF_PAGE; }
+  void SetPageType(IndexPageType page_type) { page_type_ = page_type; }
 
-  auto GetSize() const -> int;
-  void SetSize(int size);
-  void ChangeSizeBy(int amount);
+  auto GetSize() const -> int { return size_; }
+  void SetSize(int size) { size_ = size; }
+  void ChangeSizeBy(int amount) { size_ += amount; }
 
-  auto GetMaxSize() const -> int;
-  void SetMaxSize(int max_size);
-  auto GetMinSize() const -> int;
+  auto GetMaxSize() const -> int { return max_size_; }
+  void SetMaxSize(int max_size) { max_size_ = max_size; }
 
   /*
-   * TODO(P2): Remove __attribute__((__unused__)) if you intend to use the fields.
+   * Helper method to get min page size
+   * Generally, min page size == max page size / 2
+   * But whether you will take ceil() or floor() depends on your implementation
    */
+  auto GetMinSize() const -> int { return IsLeafPage() ? max_size_ / 2 : (max_size_ + 1) / 2; }
+
  private:
   // Member variables, attributes that both internal and leaf page share
-  IndexPageType page_type_ __attribute__((__unused__));
+  IndexPageType page_type_;
   // Number of key & value pairs in a page
-  int size_ __attribute__((__unused__));
+  int size_;
   // Max number of key & value pairs in a page
-  int max_size_ __attribute__((__unused__));
+  int max_size_;
 };
 
 }  // namespace bustub
