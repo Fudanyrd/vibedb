@@ -75,6 +75,8 @@ class BPlusTreeLeafPage : public BPlusTreePage {
    * @param max_size Max size of the leaf node
    */
   void Init(int max_size = LEAF_PAGE_SLOT_CNT) {
+    static_assert(LEAF_PAGE_SLOT_CNT > 2, "Leaf page size must be greater than 2");
+    static_assert(LeafPageFits(), "BPlusTreeLeafPage size exceeds BUSTUB_PAGE_SIZE");
     SetPageType(IndexPageType::LEAF_PAGE);
     SetSize(0);
     SetMaxSize(max_size);
@@ -322,6 +324,12 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   KeyType key_array_[LEAF_PAGE_SLOT_CNT];
   ValueType rid_array_[LEAF_PAGE_SLOT_CNT];
   // (Spring 2025) Feel free to add more fields and helper functions below if needed
+
+  /**
+   * Prevent invalid template parameters from overflowing the page. Evaluated when `Init` is instantiated,
+   * at which point the class is complete and `sizeof` is valid.
+   */
+  static constexpr auto LeafPageFits() -> bool { return sizeof(BPlusTreeLeafPage) <= BUSTUB_PAGE_SIZE; }
 };
 
 }  // namespace bustub

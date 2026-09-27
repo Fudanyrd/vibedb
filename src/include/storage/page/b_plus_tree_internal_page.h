@@ -51,6 +51,8 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   BPlusTreeInternalPage(const BPlusTreeInternalPage &other) = delete;
 
   void Init(int max_size = INTERNAL_PAGE_SLOT_CNT) {
+    static_assert(INTERNAL_PAGE_SLOT_CNT > 2, "Internal page size must be greater than 2");
+    static_assert(InternalPageFits(), "BPlusTreeInternalPage size exceeds BUSTUB_PAGE_SIZE");
     SetPageType(IndexPageType::INTERNAL_PAGE);
     SetSize(0);
     SetMaxSize(max_size);
@@ -173,6 +175,12 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   KeyType key_array_[INTERNAL_PAGE_SLOT_CNT];
   ValueType page_id_array_[INTERNAL_PAGE_SLOT_CNT];
   // (Spring 2025) Feel free to add more fields and helper functions below if needed
+
+  /**
+   * Prevent invalid template parameters from overflowing the page. Evaluated when `Init` is instantiated,
+   * at which point the class is complete and `sizeof` is valid.
+   */
+  static constexpr auto InternalPageFits() -> bool { return sizeof(BPlusTreeInternalPage) <= BUSTUB_PAGE_SIZE; }
 };
 
 }  // namespace bustub
