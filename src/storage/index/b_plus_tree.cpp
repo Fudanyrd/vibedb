@@ -516,7 +516,23 @@ void BPLUSTREE_TYPE::RebalanceChild(InternalPage *parent, int child_index) {
  * @return : index iterator
  */
 FULL_INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE { UNIMPLEMENTED("TODO(P2): Add implementation."); }
+auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
+  page_id_t root_id;
+  {
+    auto header_guard = bpm_->ReadPage(header_page_id_);
+    root_id = header_guard.As<BPlusTreeHeaderPage>()->root_page_id_;
+  }
+  if (root_id == INVALID_PAGE_ID) {
+    return End();
+  }
+
+  auto guard = bpm_->ReadPage(root_id);
+  while (!guard.As<BPlusTreePage>()->IsLeafPage()) {
+    auto internal = guard.As<InternalPage>();
+    guard = bpm_->ReadPage(internal->ValueAt(0));
+  }
+  return INDEXITERATOR_TYPE(bpm_.get(), std::move(guard), 0);
+}
 
 /**
  * @brief Input parameter is low key, find the leaf page that contains the input key
@@ -524,7 +540,24 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE { UNIMPLEMENTED("TODO(P2): Ad
  * @return : index iterator
  */
 FULL_INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE { UNIMPLEMENTED("TODO(P2): Add implementation."); }
+auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
+  page_id_t root_id;
+  {
+    auto header_guard = bpm_->ReadPage(header_page_id_);
+    root_id = header_guard.As<BPlusTreeHeaderPage>()->root_page_id_;
+  }
+  if (root_id == INVALID_PAGE_ID) {
+    return End();
+  }
+
+  auto guard = bpm_->ReadPage(root_id);
+  while (!guard.As<BPlusTreePage>()->IsLeafPage()) {
+    auto internal = guard.As<InternalPage>();
+    guard = bpm_->ReadPage(internal->ValueAt(internal->Lookup(key, comparator_)));
+  }
+  auto leaf = guard.As<LeafPage>();
+  return INDEXITERATOR_TYPE(bpm_.get(), std::move(guard), leaf->LowerBound(key, comparator_));
+}
 
 /**
  * @brief Input parameter is void, construct an index iterator representing the end
@@ -532,7 +565,7 @@ auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE { UNIMPLEME
  * @return : index iterator
  */
 FULL_INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::End() -> INDEXITERATOR_TYPE { UNIMPLEMENTED("TODO(P2): Add implementation."); }
+auto BPLUSTREE_TYPE::End() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(); }
 
 template class BPlusTree<GenericKey<4>, RID, GenericComparator<4>>;
 template class BPlusTree<GenericKey<8>, RID, GenericComparator<8>>;
