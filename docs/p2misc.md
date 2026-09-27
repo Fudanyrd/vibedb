@@ -1,14 +1,6 @@
 
 ## Common Pitfalls
 
-- We do not test your iterator for thread-safe leaf scans. A correct
-  implementation, however, would require the Leaf Page to throw a
-  `std::exception` when it cannot acquire a latch on its sibling to
-  avoid potential dead-locks.
-- If you implement a concurrent B+Tree index correctly, every thread
-  will always acquire latches from the header page to the bottom. When
-  you release latches, make sure you release them in the same order
-  (from the header page to the bottom).
 - When implementing the page classes (Task 1), make sure you only add
   class fields of trivially-constructed types (e.g. `int`). Do not add
   vectors and do not modify `key_array_` and `value_array_`.

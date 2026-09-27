@@ -31,6 +31,7 @@
 #include <queue>
 #include <shared_mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "common/config.h"
@@ -140,6 +141,69 @@ class BPlusTree {
    */
   auto InsertRecursive(WritePageGuard guard, const KeyType &key, const ValueType &value, KeyType *split_key,
                        page_id_t *split_page, bool *inserted) -> bool;
+
+  static void InsertFirstPair(WritePageGuard &guard, const KeyType &key, const ValueType &value) {
+    auto *leaf_mut = guard.AsMut<LeafPage>();
+    leaf_mut->Init(leaf_mut->GetMaxSize());
+    leaf_mut->SetKeyAt(0, key);
+    leaf_mut->SetValueAt(0, value);
+    leaf_mut->SetSize(1);
+  }
+
+  /**
+   * @brief Recursively insert a key/value pair into the subtree rooted at `guard`.
+   *
+   * @param guard The write guard of the header page.
+   */
+  void InsertRecursivePessimistic(WritePageGuard guard, const KeyType &key, const ValueType &value, bool *inserted) {
+    auto *header_page = guard.AsMut<BPlusTreeHeaderPage>();
+    const auto root_id = header_page->root_page_id_;
+    if (root_id == INVALID_PAGE_ID) {
+      // This may happen because another thread dropped the
+      // entire index.
+      const auto new_page_id = bpm_->NewPage();
+      auto new_root_guard = bpm_->WritePage(new_page_id);
+      InsertFirstPair(new_root_guard, key, value);
+      header_page->root_page_id_ = new_page_id;
+      *inserted = true;
+      return;
+    }
+    auto root_guard = bpm_->WritePage(root_id);
+    KeyType split_key;
+    page_id_t split_page = INVALID_PAGE_ID;
+    bool split = InsertRecursive(std::move(root_guard), key, value, &split_key, &split_page, inserted);
+    if (!(*inserted)) {
+      return;
+    }
+    if (split) {
+      // split current root page, create a new root page, and
+      // update the root page id in the header page.
+      BUSTUB_ASSERT(split_page != INVALID_PAGE_ID, "split page should not be invalid");
+      page_id_t new_root_id = bpm_->NewPage();
+      auto new_root_guard = bpm_->WritePage(new_root_id);
+      auto new_root = new_root_guard.AsMut<InternalPage>();
+      new_root->Init(internal_max_size_);
+      new_root->SetKeyAt(0, KeyType{});
+      new_root->SetValueAt(0, header_page->root_page_id_);
+      new_root->SetKeyAt(1, split_key);
+      new_root->SetValueAt(1, split_page);
+      new_root->SetSize(2);
+      header_page->root_page_id_ = new_root_id;
+    }
+  }
+
+  /**
+   * @param guard: the root page of this index.
+   * @param key: the key to insert.
+   * @param value: the value to insert.
+   * @param inserted[out]: Set to true if the key was inserted, false if it already existed.
+   * @return true when no node split is required.
+   */
+  auto InsertRecursiveOptimistic(ReadPageGuard guard, const KeyType &key, const ValueType &value, bool *inserted)
+      -> bool;
+
+  auto InsertIntoLeafOptimistic(ReadPageGuard leaf_guard, const KeyType &key, const ValueType &value, bool *inserted)
+      -> bool;
 
   /**
    * @brief Remove `key` from the subtree rooted at `guard`.
