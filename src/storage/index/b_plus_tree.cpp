@@ -124,11 +124,12 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
     auto root_ptr = root_guard.As<BPlusTreePage>();
 
     if (root_ptr->IsLeafPage()) {
-      bool no_split = InsertIntoLeafOptimistic(std::move(root_guard), key, value, &inserted);
+      root_guard.Drop();
+      bool no_split = InsertIntoLeafOptimistic(root_id, key, value, &inserted);
       if (no_split) {
         return inserted;
       }
-    } else if (InsertRecursiveOptimistic(std::move(root_guard), key, value, &inserted)) {
+    } else if (header_guard.Drop(), InsertRecursiveOptimistic(std::move(root_guard), key, value, &inserted)) {
       return inserted;
     }
   }
@@ -215,8 +216,9 @@ auto BPLUSTREE_TYPE::InsertRecursive(WritePageGuard guard, const KeyType &key, c
 }
 
 FULL_INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::InsertIntoLeafOptimistic(ReadPageGuard leaf_guard, const KeyType &key, const ValueType &value,
+auto BPLUSTREE_TYPE::InsertIntoLeafOptimistic(page_id_t leaf_id, const KeyType &key, const ValueType &value,
                                               bool *inserted) -> bool {
+  auto leaf_guard = bpm_->WritePage(leaf_id);
   auto leaf = leaf_guard.As<LeafPage>();
   int index = leaf->LowerBound(key, comparator_);
   if (index < leaf->GetSize() && comparator_(leaf->KeyAt(index), key) == 0 && !leaf->IsTombstoned(index)) {
@@ -224,10 +226,7 @@ auto BPLUSTREE_TYPE::InsertIntoLeafOptimistic(ReadPageGuard leaf_guard, const Ke
     return true;  // no splitting required.
   }
   if (leaf->GetSize() + 1 < leaf->GetMaxSize()) {
-    // upgrade to write latch, insert, and return.
-    leaf_guard.Drop();
-    auto leaf_guard_rw = bpm_->WritePage(leaf_guard.GetPageId());
-    auto leaf_mut = leaf_guard_rw.AsMut<LeafPage>();
+    auto leaf_mut = leaf_guard.AsMut<LeafPage>();
     *inserted = leaf_mut->InsertPair(key, value, comparator_);
     return true;  // no splitting required.
   }
@@ -246,7 +245,8 @@ auto BPLUSTREE_TYPE::InsertRecursiveOptimistic(ReadPageGuard guard, const KeyTyp
   auto *child_ptr = child_page.template As<BPlusTreePage>();
 
   if (child_ptr->IsLeafPage()) {
-    return InsertIntoLeafOptimistic(std::move(child_page), key, value, inserted);
+    child_page.Drop();
+    return InsertIntoLeafOptimistic(child_page_id, key, value, inserted);
   }
 
   // Already hold latch on its child, so it is safe
@@ -269,20 +269,19 @@ auto BPLUSTREE_TYPE::InsertRecursiveOptimistic(ReadPageGuard guard, const KeyTyp
  */
 FULL_INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::Remove(const KeyType &key) {
-  page_id_t root_id;
+  // Optimistic path: descend with read latches while pinning the root via the header read latch, so that latches are
+  // always acquired top-down (header, root, internal, leaf). If the deletion is absorbed by the leaf's tombstone
+  // buffer (or leaves the leaf at least half full), only the leaf needs to be written.
   {
     auto header_guard = bpm_->ReadPage(header_page_id_);
-    root_id = header_guard.As<BPlusTreeHeaderPage>()->root_page_id_;
-  }
-  if (root_id == INVALID_PAGE_ID) {
-    return;
-  }
+    const auto root_id = header_guard.As<BPlusTreeHeaderPage>()->root_page_id_;
+    if (root_id == INVALID_PAGE_ID) {
+      return;
+    }
 
-  // Optimistic path: if the deletion is absorbed by the leaf's tombstone buffer (or leaves the leaf at least half
-  // full), only the leaf needs to be written.
-  {
     std::deque<ReadPageGuard> path;
     path.push_back(bpm_->ReadPage(root_id));
+    header_guard.Drop();
     while (!path.back().As<BPlusTreePage>()->IsLeafPage()) {
       auto internal = path.back().As<InternalPage>();
       path.push_back(bpm_->ReadPage(internal->ValueAt(internal->Lookup(key, comparator_))));
@@ -307,8 +306,9 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key) {
     page_id_t leaf_id = path.back().GetPageId();
     bool done = false;
     if (safe_to_delete(leaf, leaf_id)) {
-      path.clear();
+      path.pop_back();  // release rlatch on leaf.
       auto leaf_guard = bpm_->WritePage(leaf_id);
+      path.clear();
       auto leaf_mut = leaf_guard.AsMut<LeafPage>();
       if (safe_to_delete(leaf_mut, leaf_id)) {
         done = DeleteFromLeaf(leaf_mut, key);
@@ -317,6 +317,14 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key) {
     if (done) {
       return;
     }
+  }
+
+  // Pessimistic path: the deletion may merge or delete pages, so acquire the header write latch first and keep it for
+  // the whole operation. All other latches (root, internal, leaf/sibling) are acquired strictly top-down.
+  auto header_guard = bpm_->WritePage(header_page_id_);
+  const auto root_id = header_guard.As<BPlusTreeHeaderPage>()->root_page_id_;
+  if (root_id == INVALID_PAGE_ID) {
+    return;
   }
 
   bool found = false;
@@ -328,19 +336,15 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key) {
     return;
   }
 
-  // Collapse the root if it became empty (leaf) or has a single child (internal).
-  auto header_guard = bpm_->WritePage(header_page_id_);
-  page_id_t current_root = header_guard.As<BPlusTreeHeaderPage>()->root_page_id_;
-  if (current_root == INVALID_PAGE_ID) {
-    return;
-  }
-  auto root_guard = bpm_->WritePage(current_root);
+  // Collapse the root if it became empty (leaf) or has a single child (internal). The header latch is still held, so
+  // the root page cannot change underneath us.
+  auto root_guard = bpm_->WritePage(root_id);
   auto root_page = root_guard.AsMut<BPlusTreePage>();
   if (root_page->IsLeafPage()) {
     if (root_page->GetSize() == 0) {
       header_guard.AsMut<BPlusTreeHeaderPage>()->root_page_id_ = INVALID_PAGE_ID;
       root_guard.Drop();
-      bpm_->DeletePage(current_root);
+      bpm_->DeletePage(root_id);
     }
     return;
   }
@@ -349,7 +353,7 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key) {
     page_id_t new_root_id = root_internal->ValueAt(0);
     header_guard.AsMut<BPlusTreeHeaderPage>()->root_page_id_ = new_root_id;
     root_guard.Drop();
-    bpm_->DeletePage(current_root);
+    bpm_->DeletePage(root_id);
   }
 }
 

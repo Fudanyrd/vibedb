@@ -142,9 +142,9 @@ class BPlusTree {
   auto InsertRecursive(WritePageGuard guard, const KeyType &key, const ValueType &value, KeyType *split_key,
                        page_id_t *split_page, bool *inserted) -> bool;
 
-  static void InsertFirstPair(WritePageGuard &guard, const KeyType &key, const ValueType &value) {
+  void InsertFirstPair(WritePageGuard &guard, const KeyType &key, const ValueType &value) {
     auto *leaf_mut = guard.AsMut<LeafPage>();
-    leaf_mut->Init(leaf_mut->GetMaxSize());
+    leaf_mut->Init(leaf_max_size_);
     leaf_mut->SetKeyAt(0, key);
     leaf_mut->SetValueAt(0, value);
     leaf_mut->SetSize(1);
@@ -202,8 +202,7 @@ class BPlusTree {
   auto InsertRecursiveOptimistic(ReadPageGuard guard, const KeyType &key, const ValueType &value, bool *inserted)
       -> bool;
 
-  auto InsertIntoLeafOptimistic(ReadPageGuard leaf_guard, const KeyType &key, const ValueType &value, bool *inserted)
-      -> bool;
+  auto InsertIntoLeafOptimistic(page_id_t leaf_id, const KeyType &key, const ValueType &value, bool *inserted) -> bool;
 
   /**
    * @brief Remove `key` from the subtree rooted at `guard`.
